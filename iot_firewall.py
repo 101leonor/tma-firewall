@@ -206,6 +206,9 @@ def block_flows_for_device(labeled_flows, selected_device_type):
 class FirewallApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.rules_window = None  # Variable para controlar la ventana de reglas
+
+
         self.title("IoT Firewall v6 (5-feature fix)")
         self.geometry("600x280")
 
@@ -223,20 +226,33 @@ class FirewallApp(tk.Tk):
             width=30
         )
         self.combo.pack(pady=5)
+    
 
-        dur_label = tk.Label(self, text="Capture Duration (seconds):")
-        dur_label.pack()
+
+        frame1 = tk.Frame(self)
+        frame1.pack(anchor='center')
+
+        dur_label = tk.Label(frame1, text="Capture Duration (seconds):")
+        dur_label.pack(side=tk.LEFT)
 
         self.duration_var = tk.StringVar(value="10")
-        self.duration_entry = tk.Entry(self, textvariable=self.duration_var, width=5)
-        self.duration_entry.pack(pady=2)
+        self.duration_entry = tk.Entry(frame1, textvariable=self.duration_var, width=5)
+        self.duration_entry.pack(pady=2,side=tk.RIGHT)
+        
+
+
 
         self.start_btn = tk.Button(self, text="Start Capture & Block",
                                    command=self.start_capture_and_block)
         self.start_btn.pack(pady=5)
 
-        self.exit_btn = tk.Button(self, text="Exit", command=self.exit_app)
-        self.exit_btn.pack(pady=5)
+        frame2 = tk.Frame(self)
+        frame2.pack(anchor='center')
+        self.show_rules_btn = tk.Button(frame2, text="Show rules", command=self.show_rules, width=6)
+        self.show_rules_btn.pack(pady=5, side=tk.LEFT, padx=5)
+
+        self.exit_btn = tk.Button(frame2, text="Exit", command=self.exit_app, width=6)
+        self.exit_btn.pack(pady=5, side=tk.RIGHT, padx=5)
 
         # Attempt to load a real classifier
         self.classifier = load_classifier("rf_classifier.pkl")
@@ -276,6 +292,79 @@ class FirewallApp(tk.Tk):
     def exit_app(self):
         self.destroy()
 
+
+
+
+    def show_rules(self):
+        
+        # Check if a window is already open
+        if self.rules_window and tk.Toplevel.winfo_exists(self.rules_window):
+            self.rules_window.lift()  # Bring the window to the front
+            self.rules_window.focus_force()  # Give it focus
+            return
+
+        # Create a new window
+        self.rules_window = tk.Toplevel(self)
+        self.rules_window.title("Iptables Rules")
+        #self.rules_window.geometry("800x400")
+
+        # Create a Listbox to display the rules with monospaced font
+        listbox = tk.Listbox(self.rules_window, selectmode=tk.SINGLE, width=100, height=20, font=("Courier", 10))
+        listbox.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+
+        # Get iptables rules and add them to the Listbox
+        try:
+            result = subprocess.run(["iptables", "-L", "-n", "--line-numbers", "-v"], capture_output=True, text=True, check=True)
+            rules = result.stdout.splitlines()
+
+            for rule in rules:
+                listbox.insert(tk.END, rule)
+        except subprocess.CalledProcessError as e:
+            messagebox.showerror("Error", f"Error fetching iptables rules: {e}")
+
+        # Function to delete a selected rule
+        def delete_rule():
+            selected_index = listbox.curselection()
+            if not selected_index:
+                messagebox.showwarning("Warning", "Please select a rule to delete.")
+                return
+
+            selected_rule = listbox.get(selected_index)
+            parts = selected_rule.split()
+
+            if len(parts) < 2 or not parts[0].isdigit():
+                messagebox.showwarning("Warning", "Invalid rule selected.")
+                return
+
+            rule_number = parts[0]
+            chain = "INPUT"  # We assume we are working on the default INPUT chain
+
+            try:
+                subprocess.run(["iptables", "-D", chain, rule_number], check=True)
+                listbox.delete(selected_index)
+                messagebox.showinfo("Success", f"Rule {rule_number} deleted successfully.")
+            except subprocess.CalledProcessError as e:
+                messagebox.showerror("Error", f"Error deleting rule {rule_number}: {e}")
+
+
+        frame3 = tk.Frame(self.rules_window)
+        frame3.pack(anchor='center')
+
+        # Delete Rules Button
+        delete_button = tk.Button(frame3, text="Delete Rule", command=delete_rule)
+        delete_button.pack(pady=5, side=tk.LEFT, padx=5)
+
+        def close_rules_window():
+            self.rules_window.destroy()
+            self.rules_window = None  # Reiniciar el control de la ventana
+
+
+        # Close Rules window Button
+        close_button = tk.Button(frame3, text="Close Rules", command=close_rules_window)
+        close_button.pack(pady=5, side=tk.RIGHT, padx=5)
+
+
+        
 def main():
     if os.geteuid() != 0:
         print("[WARNING] Not running as root. iptables/tcpdump may fail.")
