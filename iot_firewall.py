@@ -166,8 +166,7 @@ def parse_tcpdump_to_flows(directory):
                 pkt[IP].dst,
                 pkt.sport,
                 pkt.dport,
-                pkt[IP].proto,
-                pkt.device
+                pkt[IP].proto
             )
         
         flows[flow_key].append(pkt)
@@ -225,9 +224,17 @@ def classify_flows(flows, classifier):
 
     input = np.delete(input, 0, axis=0)
 
-    y_pred = classifier.predict(input)
+    probabilities = classifier.predict_proba(input)
+    threshold = 0.5
+    max_probs = np.max(probabilities, axis=1)
+    predictions = classifier.predict(input)
 
-    return y_pred
+    for i, prob in enumerate(max_probs):
+        if prob < threshold:
+            predictions[i] = 'other'
+
+
+    return list(zip(flows, predictions))
 ###############################################################################
 # IPTABLES Blocking
 ###############################################################################
@@ -243,16 +250,16 @@ def block_flows_for_device(labeled_flows, selected_device_type):
     if not matching:
         print(f"[DEBUG] No flows matched device = {selected_device_type}")
         return
-
+    
+    # TODO: decide which IP we are going to use - source or destination
     for flow, dev_type in matching:
-        proto = flow["proto"].lower()  # "tcp" or "udp"
-        dst_ip = flow["dst_ip"]
-        dst_port = flow["dst_port"]
+        dst_ip = flow[1]
+        dst_port = flow[3]
 
         cmd = [
             "iptables",
             "-A", "INPUT",
-            "-p", proto,
+            "-p", "tcp",
             "-d", dst_ip,
             "--dport", str(dst_port),
             "-j", "DROP"
@@ -278,8 +285,9 @@ class FirewallApp(tk.Tk):
 
         lbl = tk.Label(self, text="Select IoT device type to block, then capture traffic.")
         lbl.pack(pady=5)
-
-        self.device_types = ["IP Camera", "Smart Speaker", "Smart TV", "Unknown"]
+        
+        # TODO: make sure the naming is the same as the classifier
+        self.device_types = ["IP Camera", "Smart Speaker", "Smart TV", "alarm", "Unknown"] 
         self.selected_device_var = tk.StringVar(value=self.device_types[0])
 
         self.combo = ttk.Combobox(
@@ -346,11 +354,12 @@ class FirewallApp(tk.Tk):
         flows = parse_tcpdump_to_flows("tcpdump_capture.pcap")
         labeled = classify_flows(flows, self.classifier)
         dev_type = self.selected_device_var.get()
+        print(labeled, dev_type)
         block_flows_for_device(labeled, dev_type)
 
         messagebox.showinfo(
             "Done",
-            f"Capture finished. Attempted to block flows for {dev_type}.\nCheck iptables -L -n and tcpdump_capture.log."
+            f"Capture finished. Attempted to block flows for {dev_type}.\nCheck iptables -L -n and tcpdump_capture.pcap."
         )
 
     def exit_app(self):
