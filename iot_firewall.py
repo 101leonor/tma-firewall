@@ -5,7 +5,10 @@ import time
 import subprocess
 import pickle
 import re
+import numpy as np
 from collections import defaultdict
+from scapy.all import PacketList,rdpcap, TCP,IP,UDP
+
 
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -73,11 +76,35 @@ def run_tcpdump(duration=10, interface="any", output_file="tcpdump_capture.log")
 
     return captured_lines
 
+
+def run_tcpdump_updated(duration=10, interface="any", output_file="tcpdump_capture.pcap"):
+    try:
+        process = subprocess.Popen(
+            ["tcpdump", "-i", interface, "-w", output_file],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+
+        time.sleep(duration)
+
+        process.terminate()
+
+        with open(output_file, "rb") as file:
+            file_contents = file.readlines()
+        return file_contents
+        
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+    
+
 ###############################################################################
 # Parse tcpdump lines into flows
 ###############################################################################
 
-def parse_tcpdump_to_flows(tcpdump_lines):
+'''def parse_tcpdump_to_flows(tcpdump_lines):
     """
     Uses a broader regex that accounts for possible timestamps, interface info, etc.
     We capture:
@@ -120,12 +147,37 @@ def parse_tcpdump_to_flows(tcpdump_lines):
         })
     print(f"[DEBUG] Parsed {len(flows)} flow(s)")
     return flows
+'''
 
+def parse_tcpdump_to_flows(directory):
+
+    packets = rdpcap(directory)
+
+    packets = packets.filter(lambda x: x.haslayer(TCP)) # filter only TCP packets Not sure if we should use this or not
+
+    flows = defaultdict(list)
+
+    for pkt in packets:
+
+        if IP in pkt and (TCP in pkt or UDP in pkt):
+       
+            flow_key = (
+                pkt[IP].src,
+                pkt[IP].dst,
+                pkt.sport,
+                pkt.dport,
+                pkt[IP].proto,
+                pkt.device
+            )
+        
+        flows[flow_key].append(pkt)
+    return flows
+    
 ###############################################################################
 # Classification (with forced label for port 554, minus 'bytes' in the vector)
 ###############################################################################
 
-def classify_flows(flows, classifier):
+'''def classify_flows(flows, classifier):
     """
     If classifier is loaded, predict device types using a 5-feature vector:
       [packets, src_port, dst_port, proto_tcp, proto_udp]
@@ -163,7 +215,19 @@ def classify_flows(flows, classifier):
         print("[DEBUG] Flow:", flow, "=> Label:", label)
 
     return labeled_flows
+'''
 
+def classify_flows(flows, classifier):
+    input = np.zeros((1,5))
+    for flow,pkts in flows.items():
+    #print(flow[2], flow[3], flow[4], len(pkts), sum([pkt.len for pkt in pkts]), pkts[0].device)
+        input = np.vstack([input,(flow[2], flow[3], flow[4], len(pkts), sum([pkt.len for pkt in pkts]))])
+
+    input = np.delete(input, 0, axis=0)
+
+    y_pred = classifier.predict(input)
+
+    return y_pred
 ###############################################################################
 # IPTABLES Blocking
 ###############################################################################
@@ -270,16 +334,16 @@ class FirewallApp(tk.Tk):
 
         messagebox.showinfo(
             "Info",
-            f"Capturing {duration} seconds. Output in tcpdump_capture.log"
+            f"Capturing {duration} seconds. Output in tcpdump_capture.pcap"
         )
 
-        lines = run_tcpdump(
+        lines = run_tcpdump_updated(
             duration=duration,
             interface="any",
-            output_file="tcpdump_capture.log"
+            output_file="tcpdump_capture.pcap"
         )
 
-        flows = parse_tcpdump_to_flows(lines)
+        flows = parse_tcpdump_to_flows("tcpdump_capture.pcap")
         labeled = classify_flows(flows, self.classifier)
         dev_type = self.selected_device_var.get()
         block_flows_for_device(labeled, dev_type)
