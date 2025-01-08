@@ -5,6 +5,8 @@ import time
 import subprocess
 import pickle
 import re
+import threading
+import queue
 import numpy as np
 from collections import defaultdict
 from scapy.all import PacketList,rdpcap, TCP,IP,UDP
@@ -104,7 +106,7 @@ def run_tcpdump_updated(duration=10, interface="any", output_file="tcpdump_captu
 # Parse tcpdump lines into flows
 ###############################################################################
 
-'''def parse_tcpdump_to_flows(tcpdump_lines):
+r'''def parse_tcpdump_to_flows(tcpdump_lines):
     """
     Uses a broader regex that accounts for possible timestamps, interface info, etc.
     We capture:
@@ -235,6 +237,7 @@ def classify_flows(flows, classifier):
 
 
     return list(zip(flows, predictions))
+
 ###############################################################################
 # IPTABLES Blocking
 ###############################################################################
@@ -278,7 +281,10 @@ class FirewallApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.rules_window = None  # Variable para controlar la ventana de reglas
-
+        self.tcpdump_thread = None
+        self.tcpdump_process = None
+        self.device_block_list = set()  
+        self.capture_queue = queue.Queue()
 
         self.title("IoT Firewall v6 (5-feature fix)")
         self.geometry("600x280")
@@ -299,23 +305,21 @@ class FirewallApp(tk.Tk):
         )
         self.combo.pack(pady=5)
     
-
-
         frame1 = tk.Frame(self)
         frame1.pack(anchor='center')
 
+        #### Can be removed after testing
         dur_label = tk.Label(frame1, text="Capture Duration (seconds):")
         dur_label.pack(side=tk.LEFT)
 
         self.duration_var = tk.StringVar(value="10")
         self.duration_entry = tk.Entry(frame1, textvariable=self.duration_var, width=5)
         self.duration_entry.pack(pady=2,side=tk.RIGHT)
-        
 
 
 
         self.start_btn = tk.Button(self, text="Start Capture & Block",
-                                   command=self.start_capture_and_block)
+                                   command=self.add_device_to_block) # Add the desired device to be blocked into the set
         self.start_btn.pack(pady=5)
 
         frame2 = tk.Frame(self)
@@ -329,44 +333,93 @@ class FirewallApp(tk.Tk):
         # Attempt to load a real classifier
         self.classifier = load_classifier("rf_classifier.pkl")
 
-    def start_capture_and_block(self):
+        # Start `tcpdump` in the background
+        self.start_tcpdump()
+
+    def start_tcpdump(self):
+        """Start tcpdump in a background thread."""
         if os.geteuid() != 0:
             messagebox.showerror("Error", "Please run as root/sudo for tcpdump & iptables.")
             return
 
-        try:
-            duration = int(self.duration_var.get())
-        except ValueError:
-            messagebox.showerror("Invalid Input", "Capture duration must be an integer.")
+        def tcpdump_capture():
+            try:
+                self.tcpdump_process = subprocess.Popen(
+                    ["tcpdump", "-i", "any", "-w", "tcpdump_capture.pcap"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                self.tcpdump_process.wait()  # Keep process alive
+            except Exception as e:
+                print(f"Error starting tcpdump: {e}")
+
+        self.tcpdump_thread = threading.Thread(target=tcpdump_capture, daemon=True)
+        self.tcpdump_thread.start()
+
+    def add_device_to_block(self):
+        """Add the selected IoT device to the block list and trigger classification."""
+        dev_type = self.selected_device_var.get()
+        if dev_type in self.device_block_list:
+            messagebox.showinfo("Info", f"{dev_type} is already being blocked.")
             return
 
-        messagebox.showinfo(
-            "Info",
-            f"Capturing {duration} seconds. Output in tcpdump_capture.pcap"
-        )
+        self.device_block_list.add(dev_type)
+        messagebox.showinfo("Info", f"Added {dev_type} to block list.")
+        self.process_captured_traffic()
 
-        lines = run_tcpdump_updated(
-            duration=duration,
-            interface="any",
-            output_file="tcpdump_capture.pcap"
-        )
+    def process_captured_traffic(self):
+        """Process the tcpdump file and classify traffic for blocking."""
+        try:
+            flows = parse_tcpdump_to_flows("tcpdump_capture.pcap")
+            labeled = classify_flows(flows, self.classifier)
 
-        flows = parse_tcpdump_to_flows("tcpdump_capture.pcap")
-        labeled = classify_flows(flows, self.classifier)
-        dev_type = self.selected_device_var.get()
-        print(labeled, dev_type)
-        block_flows_for_device(labeled, dev_type)
+            for dev_type in self.device_block_list:
+                block_flows_for_device(labeled, dev_type)
 
-        messagebox.showinfo(
-            "Done",
-            f"Capture finished. Attempted to block flows for {dev_type}.\nCheck iptables -L -n and tcpdump_capture.pcap."
-        )
+        except Exception as e:
+            print(f"Error processing captured traffic: {e}")
 
     def exit_app(self):
+        """Stop tcpdump and exit the application."""
+        if self.tcpdump_process:
+            self.tcpdump_process.terminate()
         self.destroy()
 
+    # def start_capture_and_block(self):
+    #     if os.geteuid() != 0:
+    #         messagebox.showerror("Error", "Please run as root/sudo for tcpdump & iptables.")
+    #         return
 
+    #     try:
+    #         duration = int(self.duration_var.get())
+    #     except ValueError:
+    #         messagebox.showerror("Invalid Input", "Capture duration must be an integer.")
+    #         return
 
+    #     messagebox.showinfo(
+    #         "Info",
+    #         f"Capturing {duration} seconds. Output in tcpdump_capture.pcap"
+    #     )
+
+    #     lines = run_tcpdump_updated(
+    #         duration=duration,
+    #         interface="any",
+    #         output_file="tcpdump_capture.pcap"
+    #     )
+
+    #     flows = parse_tcpdump_to_flows("tcpdump_capture.pcap")
+    #     labeled = classify_flows(flows, self.classifier)
+    #     dev_type = self.selected_device_var.get()
+    #     print(labeled, dev_type)
+    #     block_flows_for_device(labeled, dev_type)
+
+    #     messagebox.showinfo(
+    #         "Done",
+    #         f"Capture finished. Attempted to block flows for {dev_type}.\nCheck iptables -L -n and tcpdump_capture.pcap."
+    #     )
+
+    # def exit_app(self):
+    #     self.destroy()
 
     def show_rules(self):
         
