@@ -281,7 +281,7 @@ class FirewallApp(tk.Tk):
 
 
         self.title("IoT Firewall v6 (5-feature fix)")
-        self.geometry("600x280")
+        self.geometry("400x200")
 
         lbl = tk.Label(self, text="Select IoT device type to block, then capture traffic.")
         lbl.pack(pady=5)
@@ -395,6 +395,166 @@ class FirewallApp(tk.Tk):
         except subprocess.CalledProcessError as e:
             messagebox.showerror("Error", f"Error fetching iptables rules: {e}")
 
+        def add_rule():
+            """Abre una ventana emergente para añadir una nueva regla."""
+            # Crear una nueva ventana emergente
+            add_rule_window = tk.Toplevel(self.rules_window)
+            add_rule_window.title("Add New Rule")
+            add_rule_window.geometry("400x600")
+            
+            
+            # Etiqueta de título
+            title_label = tk.Label(add_rule_window, text="Add a New Rule", font=("Helvetica", 16, "bold"))
+            title_label.pack(pady=10)
+            
+            main_frame = tk.Frame(add_rule_window)
+            main_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+
+            # Configurar columnas para que sean iguales
+            main_frame.grid_columnconfigure(0, weight=1, uniform="group1")  # Columna de etiquetas
+            main_frame.grid_columnconfigure(1, weight=2, uniform="group1")  # Columna de campos
+            
+
+          
+            # Campos para la nueva regla
+
+            # Chain
+            chain_label = tk.Label(main_frame, text="Chain:")
+            chain_label.grid(row=0, column=0, pady=5, sticky="e")
+
+            chain_entry_var = tk.StringVar(value="INPUT")
+            chain_entry = ttk.Combobox(main_frame, textvariable=chain_entry_var, values=["INPUT", "FORWARD", "OUTPUT"], state="readonly")
+            chain_entry.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+
+         
+            # Target
+            target_label = tk.Label(main_frame, text="Target:")
+            target_label.grid(row=1, column=0, pady=5, sticky="e")
+            
+            target_entry_var = tk.StringVar(value="ACCEPT")
+            target_entry = ttk.Combobox(main_frame, textvariable=target_entry_var, values=["ACCEPT", "DROP", "REJECT"], state="readonly")
+            target_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+
+            # State
+            state_label = tk.Label(main_frame, text="State:")
+            state_label.grid(row=2, column=0, pady=5, sticky="e")
+            
+            state_entry_var = tk.StringVar(value="Any")
+            state_entry = ttk.Combobox(main_frame, textvariable=state_entry_var, values=["Any", "NEW", "ESTABLISHED", "RELATED", "INVALID"], state="readonly")
+            state_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+
+            # Source IP
+            source_ip_label = tk.Label(main_frame, text="Source IP:")
+            source_ip_label.grid(row=3, column=0, pady=5, sticky="e")
+           
+            source_ip_entry = tk.Entry(main_frame)
+            source_ip_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
+        
+
+            # Destination IP
+            destination_ip_label = tk.Label(main_frame, text="Destination IP:")
+            destination_ip_label.grid(row=4, column=0, pady=5, sticky="e")
+            
+            destination_ip_entry = tk.Entry(main_frame)
+            destination_ip_entry.grid(row=4, column=1, sticky="w", padx=5, pady=5)
+
+            # Source Port
+            src_port_label = tk.Label(main_frame, text="Source Port:")
+            src_port_label.grid(row=5, column=0, pady=5, sticky="e")
+            
+            src_port_entry = tk.Entry(main_frame, width=10)
+            src_port_entry.grid(row=5, column=1, sticky="w", padx=5, pady=5)
+
+
+            # Source Port
+            dst_port_label = tk.Label(main_frame, text="Destination Port:")
+            dst_port_label.grid(row=6, column=0, pady=5, sticky="e")
+            
+            dst_port_entry = tk.Entry(main_frame, width=10)
+            dst_port_entry.grid(row=6, column=1, sticky="w", padx=5, pady=5)
+
+            # Protocol
+            protocol_label = tk.Label(main_frame, text="Protocol:")
+            protocol_label.grid(row=7, column=0, pady=5, sticky="e")
+            
+            protocol_entry_var = tk.StringVar(value="TCP")
+            protocol_entry = ttk.Combobox(main_frame, textvariable=protocol_entry_var , values=["TCP", "UDP", "ICMP", "ALL"], state="readonly")
+            protocol_entry.grid(row=7, column=1, sticky="w", padx=5, pady=5)
+
+
+
+
+            # Botón para guardar la regla
+            def save_rule():
+                """Guarda la nueva regla."""
+                
+                # Obtener los valores del formulario
+                chain = chain_entry_var.get().strip()
+                target = target_entry_var.get().strip()
+                state = state_entry_var.get().strip()
+                source_ip = source_ip_entry.get().strip()
+                src_port = src_port_entry.get().strip()
+                destination_ip = destination_ip_entry.get().strip()
+                dst_port = dst_port_entry.get().strip()
+                protocol = protocol_entry_var.get().strip()
+
+
+                # Validar campos requeridos
+                if not chain or not target or not protocol:
+                    messagebox.showerror("Error", "Chain, Target, and Protocol are required.")
+                    return
+
+                # Lógica para añadir la regla al sistema
+                
+                # Construir el comando base de iptables
+                cmd = ["iptables", "-A", chain]
+
+                if protocol != "ALL":  # Si no es "ALL", especificar el protocolo
+                    cmd.extend(["-p", protocol.lower()])
+                if source_ip:
+                    cmd.extend(["-s", source_ip])
+                if destination_ip:
+                    cmd.extend(["-d", destination_ip])
+                
+                # Añadir condiciones opcionales según los campos llenados
+                if state and state != "Any":
+                    cmd.extend(["-m", "state", "--state", state])
+                
+                if protocol in ("tcp", "udp"):
+                    if src_port:
+                        cmd.extend(["--sport", src_port])
+
+                    if dst_port:
+                        cmd.extend(["--dport", dst_port])
+               
+
+                
+                cmd.extend(["-j", target])
+                print(cmd)
+            
+                # Intentar ejecutar el comando
+                try:
+                    subprocess.run(cmd, check=True)
+                    messagebox.showinfo("Success", f"Rule added successfully:\n{' '.join(cmd)}")
+                    add_rule_window.destroy()  # Cerrar la ventana emergente
+                except subprocess.CalledProcessError as e:
+                    messagebox.showerror("Error", f"Failed to add rule:\n{e}")
+
+
+
+            frame9 = tk.Frame(add_rule_window)
+            frame9.pack(anchor='center')
+
+            save_button = tk.Button(frame9, text="Save Rule", command=save_rule)
+            save_button.pack(side=tk.LEFT, pady=10)
+
+            # Botón para cerrar la ventana sin guardar
+            close_button = tk.Button(frame9, text="Cancel", command=add_rule_window.destroy)
+            close_button.pack(side=tk.RIGHT, pady=5)
+
+
+
+
         # Function to delete a selected rule
         def delete_rule():
             selected_index = listbox.curselection()
@@ -419,13 +579,41 @@ class FirewallApp(tk.Tk):
             except subprocess.CalledProcessError as e:
                 messagebox.showerror("Error", f"Error deleting rule {rule_number}: {e}")
 
+        def delete_all_rules():
+            """Elimina todas las reglas definidas en iptables."""
+            try:
+                # Ejecutar el comando para borrar todas las reglas
+                subprocess.run(["iptables", "-F"], check=True)
+
+                # Opcional: borrar reglas específicas de NAT si es necesario
+                subprocess.run(["iptables", "-t", "nat", "-F"], check=True)
+
+                # Mensaje de confirmación
+                messagebox.showinfo("Success", "All iptables rules have been deleted.")
+            except subprocess.CalledProcessError as e:
+                # Mensaje de error si el comando falla
+                messagebox.showerror("Error", f"Failed to delete all rules:\n{e}")
+            close_rules_window()
+
+
+
 
         frame3 = tk.Frame(self.rules_window)
         frame3.pack(anchor='center')
 
+        # Add Rules Button
+        add_button = tk.Button(frame3, text="Add Rule", command=add_rule)
+        add_button.pack(pady=5, side=tk.LEFT, padx=5)
+
+
         # Delete Rules Button
         delete_button = tk.Button(frame3, text="Delete Rule", command=delete_rule)
         delete_button.pack(pady=5, side=tk.LEFT, padx=5)
+
+
+        delete_all_rules_button = tk.Button(frame3, text="Delete All Rules", command=delete_all_rules)
+        delete_all_rules_button.pack(side=tk.LEFT, padx=5)
+
 
         def close_rules_window():
             self.rules_window.destroy()
@@ -437,7 +625,6 @@ class FirewallApp(tk.Tk):
         close_button.pack(pady=5, side=tk.RIGHT, padx=5)
 
 
-        
 def main():
     if os.geteuid() != 0:
         print("[WARNING] Not running as root. iptables/tcpdump may fail.")
