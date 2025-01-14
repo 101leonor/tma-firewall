@@ -5,6 +5,8 @@ import time
 import subprocess
 import pickle
 import re
+import threading
+import queue
 import numpy as np
 from collections import defaultdict
 from scapy.all import PacketList, rdpcap, TCP, IP, UDP
@@ -28,7 +30,7 @@ def load_classifier(model_path="rf_classifier.pkl"):
 ###############################################################################
 # Run tcpdump & Save Output
 ###############################################################################
-def run_tcpdump_updated(duration=10, interface="any", output_file="tcpdump_capture.pcap"):
+def run_tcpdump(duration=10, interface="any", output_file="tcpdump_capture.pcap"):
     try:
         cmd = [
             "tcpdump",
@@ -138,6 +140,15 @@ def block_flows_for_device(labeled_flows, selected_device_type):
 class FirewallApp(tk.Tk):
     def __init__(self):
         super().__init__()
+
+        self.tcpdump_thread = None
+        self.tcpdump_process = None
+        self.device_block_list = set()  
+        self.capture_queue = queue.Queue()
+
+        self.process_traffic_thread = None
+        self.running = False
+
         self.rules_window = None
         self.rules_listbox = None
         self.rules_data = []  # Will store tuples (chain, line_number, rule_line)
@@ -172,7 +183,7 @@ class FirewallApp(tk.Tk):
         lbl = ttk.Label(main_frame, text="Select IoT device type to block, then capture traffic.")
         lbl.pack(pady=5)
 
-        self.device_types = ["IP Camera", "Smart Speaker", "Smart TV", "alarm", "Unknown"]
+        self.device_types = ["IP Camera", "Sensor", "Hub", "Alarm", "Plug", "Switch", "Gateway", "other"]
         self.selected_device_var = tk.StringVar(value=self.device_types[0])
 
         self.combo = ttk.Combobox(
@@ -199,13 +210,16 @@ class FirewallApp(tk.Tk):
         self.start_btn = ttk.Button(
             main_frame,
             text="Start Capture & Block",
-            command=self.start_capture_and_block
+            command=self.add_device_to_block
         )
         self.start_btn.pack(pady=5)
 
         # Frame for show rules / exit
         frame2 = ttk.Frame(main_frame)
         frame2.pack(anchor='center')
+
+        self.clear_devices_btn = ttk.Button(frame2, text="Stop IoT scanning", command=self.clear_devices, width=16)
+        self.clear_devices_btn.pack(pady=5, side = tk.TOP, padx=10)
 
         self.show_rules_btn = ttk.Button(frame2, text="Show Rules", command=self.show_rules, width=12)
         self.show_rules_btn.pack(pady=5, side=tk.LEFT, padx=10)
@@ -215,8 +229,9 @@ class FirewallApp(tk.Tk):
 
         # Attempt to load a classifier
         self.classifier = load_classifier("rf_classifier.pkl")
+        self.start_tcpdump()
 
-    def start_capture_and_block(self):
+    def start_tcpdump(self):
         if os.geteuid() != 0:
             messagebox.showerror("Error", "Please run as root/sudo for tcpdump & iptables.")
             return
@@ -225,27 +240,49 @@ class FirewallApp(tk.Tk):
             duration = int(self.duration_var.get())
         except ValueError:
             messagebox.showerror("Invalid Input", "Capture duration must be an integer.")
-            return
-
-        messagebox.showinfo("Info", f"Capturing {duration} seconds. Output in tcpdump_capture.pcap")
-
-        run_tcpdump_updated(duration=duration, interface="any", output_file="tcpdump_capture.pcap")
-
-        flows = parse_tcpdump_to_flows("tcpdump_capture.pcap")
-        if not self.classifier:
-            labeled = [(f, "Unknown") for f in flows]
-        else:
-            labeled = classify_flows(flows, self.classifier)
-
+        def tcpdump_capture():
+            try:
+                self.tcpdump_process = subprocess.Popen(
+                    ["tcpdump", "-i", "any", "-w", "tcpdump_capture.pcap"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                self.tcpdump_process.wait()  # Keep process alive
+            except Exception as e:
+                print(f"Error starting tcpdump: {e}")
+        self.tcpdump_thread = threading.Thread(target=tcpdump_capture, daemon=True)
+        self.tcpdump_thread.start()
+    def add_device_to_block(self):
+        """Add the selected IoT device to the block list and trigger classification."""
         dev_type = self.selected_device_var.get()
-        print(labeled, dev_type)
-        block_flows_for_device(labeled, dev_type)
+        if dev_type in self.device_block_list:
+            messagebox.showinfo("Info", f"{dev_type} is already being blocked.")
 
-        messagebox.showinfo(
-            "Done",
-            f"Capture finished. Blocked flows for {dev_type} if any matched.\n"
-            "Check iptables -L -n and tcpdump_capture.pcap."
-        )
+        self.device_block_list.add(dev_type)
+        messagebox.showinfo("Info", f"Added {dev_type} to block list.")
+        self.process_captured_traffic()
+
+        if not self.running:
+            self.running = True
+            self.process_traffic_thread = threading.Thread(target=self.process_captured_traffic_loop, daemon=True)
+            self.process_traffic_thread.start()
+    def process_captured_traffic_loop(self):
+        while self.running:
+            self.process_captured_traffic()
+            time.sleep(1)
+
+    def process_captured_traffic(self):
+        try:
+            flows = parse_tcpdump_to_flows("tcpdump_capture.pcap")
+            labeled = classify_flows(flows, self.classifier)
+            for dev_type in self.device_block_list:
+                block_flows_for_device(labeled, dev_type)
+        except Exception as e:
+            print(f"Error processing captured traffic: {e}")
+
+    def clear_devices(self):
+        self.device_block_list.clear()
+        messagebox.showinfo("Info", "Cleared device block list.")
 
     def show_rules(self):
         # If already open, bring it to the front
@@ -535,6 +572,12 @@ class FirewallApp(tk.Tk):
             self.rules_window = None
 
     def exit_app(self):
+        
+        if self.tcpdump_process:
+            self.tcpdump_process.terminate()
+        self.running = False
+        if self.process_traffic_thread:
+            self.process_traffic_thread.join()
         self.destroy()
 
 ###############################################################################
