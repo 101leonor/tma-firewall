@@ -1,6 +1,6 @@
 # <div align="center">**IoT Firewall**</div>
 
-![IoT Firewall Icon](./assets/iot_firewall_icon.png)
+![IoT Firewall Icon](./assets/icon_iot_firewall.webp)
 
 An open-source IoT firewall designed to block unwanted IoT devices on user request, ensuring network security with ease!
 
