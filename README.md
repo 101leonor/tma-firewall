@@ -20,6 +20,5 @@ Follow the steps below to implement your own IoT firewall:
      ```bash
      sudo python3 iot_firewall.py
 
-
 3. **Manage firewall rules**
   You can now add, modify, and delete rules to control IoT device access to your network.
