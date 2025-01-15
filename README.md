@@ -1,4 +1,4 @@
-<div align="center">**IoT Firewall**</div>
+#<div align="center">**IoT Firewall**</div>
 
 ![IoT Firewall Icon](./assets/iot_firewall_icon.png)
 
