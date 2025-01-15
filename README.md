@@ -1,8 +1,6 @@
 # <div align="center">**IoT Firewall**</div>
 
-<div align="center">
-  ![IoT Firewall Icon](./assets/iot_firewall_icon.png)
-</div>
+![IoT Firewall Icon](./assets/iot_firewall_icon.png)
 
 An open-source IoT firewall designed to block unwanted IoT devices on user request, ensuring network security with ease!
 
@@ -17,8 +15,9 @@ Follow the steps below to implement your own IoT firewall:
 
 2. **Run the firewall script as root**
   To avoid issues with iptables or tcpdump, run the script as root:
-  
-  sudo python3 iot_firewall.py
+     ```bash
+     sudo python3 iot_firewall.py
+
 
 3. **Manage firewall rules**
   You can now add, modify, and delete rules to control IoT device access to your network.
