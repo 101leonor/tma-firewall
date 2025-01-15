@@ -1,4 +1,4 @@
-                                                                                            # IoT Firewall
+  IoT Firewall
 
 ![IoT Firewall Icon](./assets/iot_firewall_icon.png)
 
