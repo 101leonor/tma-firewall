@@ -282,6 +282,8 @@ class FirewallApp(tk.Tk):
 
     def clear_devices(self):
         self.device_block_list.clear()
+        self.process_traffic_thread = None
+        self.running = False
         messagebox.showinfo("Info", "Cleared device block list.")
 
     def show_rules(self):
