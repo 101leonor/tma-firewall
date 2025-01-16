@@ -4,7 +4,7 @@
 <img src="./assets/iot_firewall_icon.png" width="500" height="500" >
 
    
-An linux only open-source IoT firewall designed to block unwanted IoT devices on user request, ensuring network security with ease!
+A linux only open-source IoT firewall designed to block unwanted IoT devices on user request, ensuring network security with ease!
 
 ## Getting Started
 
@@ -35,3 +35,6 @@ If conda is more convenient for you that is possible as well.
 
 **IOTClassifier.ipynb** is a notebook which is used for training a Random Forest Classifier which detects the type of device using flow level information. 
 For the training of the current version of rf_classifier.pkl we used this dataset: https://paperswithcode.com/dataset/iot-devices-captures
+The notebook reads all the captures from the dataset and aggregates them into flows. It also balances the classes before classification by getting equal
+counts of each class to train on. The accuracy on the given dataset using an 80:20 split is 85% which for our purposes is enough. We cannot guarantee 
+the real life accuracy because we do not have access to another labeled dataset for testing.
