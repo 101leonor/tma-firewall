@@ -63,7 +63,7 @@ def parse_tcpdump_to_flows(directory):
 
     flows = defaultdict(list)
     for pkt in packets:
-        if IP in pkt and (TCP in pkt or UDP in pkt):
+        if IP in pkt and (TCP in pkt or UDP in pkt) and (pkt[IP].src=='192.168.1.111' or pkt[IP].dst=='192.168.1.111'):
             flow_key = (
                 pkt[IP].src,
                 pkt[IP].dst,
@@ -72,6 +72,8 @@ def parse_tcpdump_to_flows(directory):
                 pkt[IP].proto
             )
             flows[flow_key].append(pkt)
+
+    
     return flows
 
 ###############################################################################
@@ -96,7 +98,7 @@ def classify_flows(flows, classifier):
 
     input_data = np.array(input_data)
     probabilities = classifier.predict_proba(input_data)
-    threshold = 0.5
+    threshold = 0.3
     max_probs = np.max(probabilities, axis=1)
     predictions = classifier.predict(input_data)
 
@@ -183,7 +185,7 @@ class FirewallApp(tk.Tk):
         lbl = ttk.Label(main_frame, text="Select IoT device type to block, then capture traffic.")
         lbl.pack(pady=5)
 
-        self.device_types = ["IP Camera", "Sensor", "Hub", "Alarm", "Plug", "Switch", "Gateway", "other"]
+        self.device_types = ["IP Camera", "Hub", "Plug", "Switch", "other"]
         self.selected_device_var = tk.StringVar(value=self.device_types[0])
 
         self.combo = ttk.Combobox(
@@ -194,17 +196,6 @@ class FirewallApp(tk.Tk):
             width=30
         )
         self.combo.pack(pady=5)
-
-        # Frame for capture duration
-        frame1 = ttk.Frame(main_frame)
-        frame1.pack(anchor='center')
-
-        dur_label = ttk.Label(frame1, text="Capture Duration (seconds):")
-        dur_label.pack(side=tk.LEFT, padx=5)
-
-        self.duration_var = tk.StringVar(value="10")
-        self.duration_entry = ttk.Entry(frame1, textvariable=self.duration_var, width=5)
-        self.duration_entry.pack(side=tk.RIGHT, padx=5)
 
         # Start capture & block button
         self.start_btn = ttk.Button(
@@ -232,14 +223,7 @@ class FirewallApp(tk.Tk):
         self.start_tcpdump()
 
     def start_tcpdump(self):
-        if os.geteuid() != 0:
-            messagebox.showerror("Error", "Please run as root/sudo for tcpdump & iptables.")
-            return
-
-        try:
-            duration = int(self.duration_var.get())
-        except ValueError:
-            messagebox.showerror("Invalid Input", "Capture duration must be an integer.")
+        
         def tcpdump_capture():
             try:
                 self.tcpdump_process = subprocess.Popen(
@@ -282,7 +266,6 @@ class FirewallApp(tk.Tk):
 
     def clear_devices(self):
         self.device_block_list.clear()
-        self.process_traffic_thread = None
         self.running = False
         messagebox.showinfo("Info", "Cleared device block list.")
 
