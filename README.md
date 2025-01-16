@@ -4,7 +4,7 @@
 <img src="./assets/iot_firewall_icon.png" width="500" height="500" >
 
    
-A linux only open-source IoT firewall designed to block unwanted IoT devices on user request, ensuring network security with ease!
+A linux only open-source IoT firewall designed to block unwanted IoT devices by their type on user request, ensuring network security with ease!
 
 ## Getting Started
 
@@ -38,3 +38,6 @@ For the training of the current version of rf_classifier.pkl we used this datase
 The notebook reads all the captures from the dataset and aggregates them into flows. It also balances the classes before classification by getting equal
 counts of each class to train on. The accuracy on the given dataset using an 80:20 split is 85% which for our purposes is enough. We cannot guarantee 
 the real life accuracy because we do not have access to another labeled dataset for testing.
+
+The current version is able to classify only the following IoT devices due to dataset limitations: **IP Camera, Smart Switch, Smart Hub, Smart Plug**
+
