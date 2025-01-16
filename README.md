@@ -14,17 +14,17 @@ Follow the steps below to implement your own IoT firewall:
    Use the command below to clone the repository:
    ```bash
    git clone https://github.com/your-username/iot-firewall.git
-
-2. **Run the firewall script as root**
-   To avoid issues with iptables or tcpdump, run the script as root:
-     ```bash
-     sudo python3 iot_firewall.py
-3. **Virtual environment**
+2. **Virtual environment**
    You might need a virtual environment in order to install all the needed dependencies:
    ```bash
    python3 -m venv myenv
    source myenv/bin/activate
 If conda is more convenient for you that is possible as well.
+
+3. **Run the firewall script as root**
+   To avoid issues with iptables or tcpdump, run the script as root:
+     ```bash
+     sudo python3 iot_firewall.py
    
 4. **Manage firewall rules**
   You can now add, modify, and delete rules to control IoT device access to your network.
