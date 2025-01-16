@@ -63,7 +63,7 @@ def parse_tcpdump_to_flows(directory):
 
     flows = defaultdict(list)
     for pkt in packets:
-        if IP in pkt and (TCP in pkt or UDP in pkt) and (pkt[IP].src=='192.168.1.111' or pkt[IP].dst=='192.168.1.111'):
+        if IP in pkt and (TCP in pkt or UDP in pkt):
             flow_key = (
                 pkt[IP].src,
                 pkt[IP].dst,
@@ -112,7 +112,7 @@ def classify_flows(flows, classifier):
 ###############################################################################
 # IPTABLES Blocking
 ###############################################################################
-def block_flows_for_device(labeled_flows, selected_device_type):
+def block_flows_for_device(labeled_flows, selected_device_type, blocked_ips):
     matching = [(f, dev) for (f, dev) in labeled_flows
                 if dev.lower() == selected_device_type.lower()]
     if not matching:
@@ -122,6 +122,9 @@ def block_flows_for_device(labeled_flows, selected_device_type):
     for flow, dev_type in matching:
         dst_ip = flow[1]
         dst_port = flow[3]
+        if dst_ip in blocked_ips:
+            continue
+        blocked_ips.add(dst_ip)
         cmd = [
             "iptables",
             "-A", "INPUT",
@@ -146,6 +149,7 @@ class FirewallApp(tk.Tk):
         self.tcpdump_thread = None
         self.tcpdump_process = None
         self.device_block_list = set()  
+        self.blocked_ips = set()
         self.capture_queue = queue.Queue()
 
         self.process_traffic_thread = None
@@ -260,12 +264,13 @@ class FirewallApp(tk.Tk):
             flows = parse_tcpdump_to_flows("tcpdump_capture.pcap")
             labeled = classify_flows(flows, self.classifier)
             for dev_type in self.device_block_list:
-                block_flows_for_device(labeled, dev_type)
+                block_flows_for_device(labeled, dev_type,self.blocked_ips)
         except Exception as e:
             print(f"Error processing captured traffic: {e}")
 
     def clear_devices(self):
         self.device_block_list.clear()
+        self.blocked_ips.clear()
         self.running = False
         messagebox.showinfo("Info", "Cleared device block list.")
 
@@ -542,6 +547,7 @@ class FirewallApp(tk.Tk):
         """
         Flush all iptables rules (INPUT, FORWARD, OUTPUT, etc.).
         """
+        self.blocked_ips.clear()
         try:
             subprocess.run(["iptables", "-F"], check=True)
             subprocess.run(["iptables", "-t", "nat", "-F"], check=True)
